@@ -1,0 +1,35 @@
+[help]
+url = "https://github.com/hacker-house-medellin/hhm-cli"
+
+[env]
+ignore = ["HHM_API_TOKEN"]
+
+[flags.api_url]
+type = "string"
+env = "HHM_API_URL"
+default = "http://127.0.0.1:8080"
+aliases = ["api-url"]
+help = "Base URL for the Hacker House Medellín API."
+
+[flags.timeout_seconds]
+type = "integer"
+env = "HHM_TIMEOUT_SECONDS"
+default = 20
+aliases = ["timeout-seconds"]
+help = "HTTP timeout in seconds."
+
+[flags.output]
+type = "string"
+env = "HHM_OUTPUT"
+default = "json"
+aliases = ["output"]
+help = "Output mode: json or text."
+
+[commands.health]
+description = "Check API health"
+
+[commands.list]
+description = "List reservations"
+
+[commands.watch]
+description = "Watch WebSocket events"
