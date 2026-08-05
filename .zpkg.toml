@@ -13,9 +13,13 @@ url = "https://github.com/hacker-house-medellin/hhm-cli"
 [publish]
 include_readme = true
 tag_format = "v{version}"
-exclude = [".env", ".env.*", "node_modules/**", "target/**", "dist/**", "*.log"]
+exclude = [".env", ".env.*", "node_modules/**", ".vendor/.zed/**", "target/**", "dist/**", "*.log"]
 
 [dependencies]
 "hacker-house-medellin/hhm-clients" = "^0.1.0"
 "hacker-house-medellin/hhm-interfaces" = "^0.1.0"
 "hacker-house-medellin/hhm-libs" = "^0.1.0"
+
+[install]
+dir = ".vendor/.zed"
+adapter = "rust"
