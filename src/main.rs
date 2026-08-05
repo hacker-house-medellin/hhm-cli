@@ -1,13 +1,19 @@
-use anyhow::{Context, bail};
+use anyhow::{bail, Context};
 use flags2env::BundledFlags2Env;
 use futures_util::StreamExt;
 use tokio_tungstenite::connect_async;
 
 fn apply_flags() -> anyhow::Result<String> {
     let parser = BundledFlags2Env::new();
-    parser.audit_config(Some(".cli-flags.toml"))?;
+    parser
+        .audit_config(Some(".cli-flags.toml"))
+        .map_err(|error| anyhow::anyhow!("invalid .cli-flags.toml: {error}"))?;
+
     let argv = std::env::args().collect::<Vec<_>>();
-    let parsed = parser.parse_structured(&argv, Some(".cli-flags.toml"))?;
+    let parsed = parser
+        .parse_structured(&argv, Some(".cli-flags.toml"))
+        .map_err(|error| anyhow::anyhow!("could not parse CLI arguments: {error}"))?;
+
     if !parsed.unknown_options.is_empty() || !parsed.errors.is_empty() {
         bail!(
             "invalid CLI arguments: unknown={:?}, errors={:?}",
@@ -15,18 +21,22 @@ fn apply_flags() -> anyhow::Result<String> {
             parsed.errors
         );
     }
+
     let command = parsed.command.clone();
     for (key, value) in parsed.provided_flags {
+        // SAFETY: flags are applied before any worker task is spawned or any
+        // environment-reading client is constructed.
         unsafe { std::env::set_var(key, value) };
     }
+
     Ok(command)
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let command = apply_flags()?;
-    let base = std::env::var("HHM_BASE_URL")
-        .unwrap_or_else(|_| "http://127.0.0.1:8080".into());
+    let base =
+        std::env::var("HHM_BASE_URL").unwrap_or_else(|_| "http://127.0.0.1:8080".into());
     let timeout = std::env::var("HHM_TIMEOUT_SECONDS")
         .ok()
         .and_then(|value| value.parse::<u64>().ok())
@@ -38,11 +48,33 @@ async fn main() -> anyhow::Result<()> {
     let base = base.trim_end_matches('/');
 
     match command.as_str() {
-        "health" => print_response(client.get(format!("{base}/healthz")).send().await?, &output).await,
-        "list" => print_response(client.get(format!("{base}/v1/reservations")).send().await?, &output).await,
+        "health" => {
+            print_response(
+                client.get(format!("{base}/healthz")).send().await?,
+                &output,
+            )
+            .await
+        }
+        "list" => {
+            print_response(
+                client
+                    .get(format!("{base}/v1/reservations"))
+                    .send()
+                    .await?,
+                &output,
+            )
+            .await
+        }
         "get" => {
             let id = std::env::var("HHM_ID").context("--id is required")?;
-            print_response(client.get(format!("{base}/v1/reservations/{id}")).send().await?, &output).await
+            print_response(
+                client
+                    .get(format!("{base}/v1/reservations/{id}"))
+                    .send()
+                    .await?,
+                &output,
+            )
+            .await
         }
         "watch" => watch(base).await,
         _ => bail!("choose one command: health, list, get, watch"),
