@@ -1,35 +1,49 @@
 [help]
 url = "https://github.com/hacker-house-medellin/hhm-cli"
+columns = ["options", "env", "type", "default", "description"]
+
+[parse]
+command_env = "HHM_COMMAND"
+errors_env = "HHM_PARSE_ERRORS"
+unknown_options_env = "HHM_UNKNOWN_OPTIONS"
 
 [env]
-ignore = ["HHM_API_TOKEN"]
+ignore = ["HHM_TOKEN", "SUPABASE_SERVICE_ROLE_KEY"]
 
-[flags.api_url]
+[flags.base_url]
+env = "HHM_BASE_URL"
+aliases = ["base-url"]
 type = "string"
-env = "HHM_API_URL"
 default = "http://127.0.0.1:8080"
-aliases = ["api-url"]
 help = "Base URL for the Hacker House Medellín API."
 
 [flags.timeout_seconds]
-type = "integer"
 env = "HHM_TIMEOUT_SECONDS"
-default = 20
 aliases = ["timeout-seconds"]
+type = "integer"
+default = 20
 help = "HTTP timeout in seconds."
 
 [flags.output]
-type = "string"
 env = "HHM_OUTPUT"
-default = "json"
 aliases = ["output"]
+type = "string"
+default = "json"
 help = "Output mode: json or text."
 
 [commands.health]
-description = "Check API health"
+help = "Check API health."
 
 [commands.list]
-description = "List reservations"
+help = "List reservations."
+
+[commands.get]
+help = "Get one reservation."
+[commands.get.flags.id]
+env = "HHM_ID"
+aliases = ["id"]
+type = "string"
+help = "Reservation UUID."
 
 [commands.watch]
-description = "Watch WebSocket events"
+help = "Watch the API WebSocket operations stream."
