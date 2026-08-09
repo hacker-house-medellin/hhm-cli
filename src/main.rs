@@ -1,7 +1,25 @@
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 use flags2env::BundledFlags2Env;
 use futures_util::StreamExt;
 use tokio_tungstenite::connect_async;
+
+const HELP: &str = "hhm-cli 0.1.0\n\nUsage: hhm-cli <command> [options]\n\nCommands:\n  health  Check the Hacker House service\n  list    List reservations\n  get     Fetch one reservation; requires --id\n  watch   Stream reservation events\n\nOptions:\n  -h, --help       Print this help\n  -V, --version    Print the CLI version\n\nConfiguration flags are defined in .cli-flags.toml.\n";
+const VERSION: &str = concat!(env!("CARGO_PKG_NAME"), " ", env!("CARGO_PKG_VERSION"), "\n");
+
+fn informational_output<I, S>(arguments: I) -> Option<&'static str>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    arguments
+        .into_iter()
+        .map(|argument| argument.as_ref().to_owned())
+        .find_map(|argument| match argument.as_str() {
+            "-h" | "--help" => Some(HELP),
+            "-V" | "--version" => Some(VERSION),
+            _ => None,
+        })
+}
 
 fn apply_flags() -> anyhow::Result<String> {
     let parser = BundledFlags2Env::new();
@@ -34,9 +52,13 @@ fn apply_flags() -> anyhow::Result<String> {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    if let Some(output) = informational_output(std::env::args().skip(1)) {
+        print!("{output}");
+        return Ok(());
+    }
+
     let command = apply_flags()?;
-    let base =
-        std::env::var("HHM_BASE_URL").unwrap_or_else(|_| "http://127.0.0.1:8080".into());
+    let base = std::env::var("HHM_BASE_URL").unwrap_or_else(|_| "http://127.0.0.1:8080".into());
     let timeout = std::env::var("HHM_TIMEOUT_SECONDS")
         .ok()
         .and_then(|value| value.parse::<u64>().ok())
@@ -49,18 +71,11 @@ async fn main() -> anyhow::Result<()> {
 
     match command.as_str() {
         "health" => {
-            print_response(
-                client.get(format!("{base}/healthz")).send().await?,
-                &output,
-            )
-            .await
+            print_response(client.get(format!("{base}/healthz")).send().await?, &output).await
         }
         "list" => {
             print_response(
-                client
-                    .get(format!("{base}/v1/reservations"))
-                    .send()
-                    .await?,
+                client.get(format!("{base}/v1/reservations")).send().await?,
                 &output,
             )
             .await
@@ -106,4 +121,17 @@ async fn watch(base: &str) -> anyhow::Result<()> {
         println!("{}", message?.into_text()?);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{HELP, VERSION, informational_output};
+
+    #[test]
+    fn help_and_version_are_available_without_network_or_configuration() {
+        assert_eq!(informational_output(["--help"]), Some(HELP));
+        assert_eq!(informational_output(["-h"]), Some(HELP));
+        assert_eq!(informational_output(["--version"]), Some(VERSION));
+        assert_eq!(informational_output(["health"]), None);
+    }
 }
