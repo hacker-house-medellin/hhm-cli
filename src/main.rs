@@ -29,6 +29,13 @@ fn merge_env(mut initial: EnvMap, overrides: impl IntoIterator<Item = (String, S
     initial
 }
 
+fn env_value<'a>(env: &'a EnvMap, key: &str) -> Option<&'a str> {
+    env.get(key)
+        .map(String::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+}
+
 fn apply_flags(argv: &[String], initial: EnvMap) -> anyhow::Result<(String, EnvMap)> {
     let parser = BundledFlags2Env::new();
     parser
@@ -52,7 +59,9 @@ fn apply_flags(argv: &[String], initial: EnvMap) -> anyhow::Result<(String, EnvM
 }
 
 fn env_or(env: &EnvMap, key: &str, default: &str) -> String {
-    env.get(key).cloned().unwrap_or_else(|| default.to_string())
+    env_value(env, key)
+        .map(str::to_owned)
+        .unwrap_or_else(|| default.to_string())
 }
 
 #[tokio::main]
@@ -150,6 +159,53 @@ mod tests {
             [("HHM_OUTPUT".into(), "json".into())],
         );
         assert_eq!(env.get("HHM_OUTPUT").map(String::as_str), Some("json"));
+        assert_eq!(env_or(&env, "HHM_OUTPUT", "text"), "json");
         assert_eq!(std::env::var_os("HHM_OUTPUT"), before);
+    }
+
+    #[test]
+    fn empty_and_whitespace_env_values_are_absent() {
+        for raw in ["", " ", "\t"] {
+            let env = EnvMap::from([("HHM_OUTPUT".into(), raw.into())]);
+            assert_eq!(env_value(&env, "HHM_OUTPUT"), None, "raw={raw:?}");
+            assert_eq!(env_or(&env, "HHM_OUTPUT", "json"), "json");
+        }
+    }
+
+    #[test]
+    fn apply_flags_merges_cli_over_base_env_without_mutation() {
+        let before = std::env::var_os("HHM_OUTPUT");
+        let initial = EnvMap::from([("HHM_OUTPUT".into(), "text".into())]);
+        let argv = vec![
+            "hhm-cli".into(),
+            "health".into(),
+            "--output".into(),
+            "json".into(),
+        ];
+        let (command, env) = apply_flags(&argv, initial).unwrap();
+        assert_eq!(command, "health");
+        assert_eq!(env.get("HHM_OUTPUT").map(String::as_str), Some("json"));
+        assert_eq!(std::env::var_os("HHM_OUTPUT"), before);
+    }
+
+    #[test]
+    fn apply_flags_parse_failure_does_not_mutate_process_environment() {
+        let before = std::env::var_os("HHM_OUTPUT");
+        let initial = EnvMap::from([("HHM_OUTPUT".into(), "text".into())]);
+        let argv = vec![
+            "hhm-cli".into(),
+            "health".into(),
+            "--this-flag-is-not-declared".into(),
+        ];
+        assert!(apply_flags(&argv, initial).is_err());
+        assert_eq!(std::env::var_os("HHM_OUTPUT"), before);
+    }
+
+    #[test]
+    fn source_does_not_mutate_process_environment() {
+        const SRC: &str = include_str!("main.rs");
+        let production = SRC.split("#[cfg(test)]").next().unwrap_or(SRC);
+        assert!(!production.contains("std::env::set_var"));
+        assert!(!production.contains("env::set_var"));
     }
 }
