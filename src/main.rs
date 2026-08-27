@@ -3,6 +3,10 @@ use flags2env::BundledFlags2Env;
 use futures_util::StreamExt;
 use tokio_tungstenite::connect_async;
 
+mod env_map;
+
+use env_map::{EnvMap, current_env_map, env_value, get_env_map, process_argv};
+
 const HELP: &str = "hhm-cli 0.1.0\n\nUsage: hhm-cli <command> [options]\n\nCommands:\n  health  Check the Hacker House service\n  list    List reservations\n  get     Fetch one reservation; requires --id\n  watch   Stream reservation events\n\nOptions:\n  -h, --help       Print this help\n  -V, --version    Print the CLI version\n\nConfiguration flags are defined in .cli-flags.toml.\n";
 const VERSION: &str = concat!(env!("CARGO_PKG_NAME"), " ", env!("CARGO_PKG_VERSION"), "\n");
 
@@ -21,15 +25,14 @@ where
         })
 }
 
-fn apply_flags() -> anyhow::Result<String> {
+fn apply_cli_flags(argv: &[String], initial: EnvMap) -> anyhow::Result<(String, EnvMap)> {
     let parser = BundledFlags2Env::new();
     parser
         .audit_config(Some(".cli-flags.toml"))
         .map_err(|error| anyhow::anyhow!("invalid .cli-flags.toml: {error}"))?;
 
-    let argv = std::env::args().collect::<Vec<_>>();
     let parsed = parser
-        .parse_structured(&argv, Some(".cli-flags.toml"))
+        .parse_structured(argv, Some(".cli-flags.toml"))
         .map_err(|error| anyhow::anyhow!("could not parse CLI arguments: {error}"))?;
 
     if !parsed.unknown_options.is_empty() || !parsed.errors.is_empty() {
@@ -41,29 +44,30 @@ fn apply_flags() -> anyhow::Result<String> {
     }
 
     let command = parsed.command.clone();
-    for (key, value) in parsed.provided_flags {
-        // SAFETY: flags are applied before any worker task is spawned or any
-        // environment-reading client is constructed.
-        unsafe { std::env::set_var(key, value) };
-    }
+    Ok((command, get_env_map(initial, parsed.provided_flags)))
+}
 
-    Ok(command)
+fn env_or(env: &EnvMap, key: &str, default: &str) -> String {
+    env_value(env, key)
+        .map(str::to_owned)
+        .unwrap_or_else(|| default.to_string())
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    if let Some(output) = informational_output(std::env::args().skip(1)) {
+    let argv = process_argv();
+    if let Some(output) = informational_output(argv.iter().skip(1)) {
         print!("{output}");
         return Ok(());
     }
 
-    let command = apply_flags()?;
-    let base = std::env::var("HHM_BASE_URL").unwrap_or_else(|_| "http://127.0.0.1:8080".into());
-    let timeout = std::env::var("HHM_TIMEOUT_SECONDS")
-        .ok()
+    let (command, env) = apply_cli_flags(&argv, current_env_map())?;
+    let base = env_or(&env, "HHM_BASE_URL", "http://127.0.0.1:8080");
+    let timeout = env
+        .get("HHM_TIMEOUT_SECONDS")
         .and_then(|value| value.parse::<u64>().ok())
         .unwrap_or(20);
-    let output = std::env::var("HHM_OUTPUT").unwrap_or_else(|_| "json".into());
+    let output = env_or(&env, "HHM_OUTPUT", "json");
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(timeout))
         .build()?;
@@ -81,7 +85,7 @@ async fn main() -> anyhow::Result<()> {
             .await
         }
         "get" => {
-            let id = std::env::var("HHM_ID").context("--id is required")?;
+            let id = env.get("HHM_ID").context("--id is required")?;
             print_response(
                 client
                     .get(format!("{base}/v1/reservations/{id}"))
@@ -125,7 +129,7 @@ async fn watch(base: &str) -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{HELP, VERSION, informational_output};
+    use super::*;
 
     #[test]
     fn help_and_version_are_available_without_network_or_configuration() {
@@ -133,5 +137,42 @@ mod tests {
         assert_eq!(informational_output(["-h"]), Some(HELP));
         assert_eq!(informational_output(["--version"]), Some(VERSION));
         assert_eq!(informational_output(["health"]), None);
+    }
+
+    #[test]
+    fn apply_cli_flags_merges_cli_over_base_env_without_mutation() {
+        let before = std::env::var_os("HHM_OUTPUT");
+        let initial = EnvMap::from([("HHM_OUTPUT".into(), "text".into())]);
+        let argv = vec![
+            "hhm-cli".into(),
+            "health".into(),
+            "--output".into(),
+            "json".into(),
+        ];
+        let (command, env) = apply_cli_flags(&argv, initial).unwrap();
+        assert_eq!(command, "health");
+        assert_eq!(env.get("HHM_OUTPUT").map(String::as_str), Some("json"));
+        assert_eq!(std::env::var_os("HHM_OUTPUT"), before);
+    }
+
+    #[test]
+    fn apply_cli_flags_parse_failure_does_not_mutate_process_environment() {
+        let before = std::env::var_os("HHM_OUTPUT");
+        let initial = EnvMap::from([("HHM_OUTPUT".into(), "text".into())]);
+        let argv = vec![
+            "hhm-cli".into(),
+            "health".into(),
+            "--this-flag-is-not-declared".into(),
+        ];
+        assert!(apply_cli_flags(&argv, initial).is_err());
+        assert_eq!(std::env::var_os("HHM_OUTPUT"), before);
+    }
+
+    #[test]
+    fn source_does_not_mutate_process_environment() {
+        const SRC: &str = include_str!("main.rs");
+        let production = SRC.split("#[cfg(test)]").next().unwrap_or(SRC);
+        assert!(!production.contains("std::env::set_var"));
+        assert!(!production.contains("env::set_var"));
     }
 }
