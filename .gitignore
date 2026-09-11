@@ -2,6 +2,9 @@
 .env.*
 !.env.example
 target/
+.zed/
+.zed-pack/
+.vendor/.zed/
 node_modules/
 dist/
 .astro/
