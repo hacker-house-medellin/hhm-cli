@@ -13,7 +13,8 @@ url = "https://github.com/hacker-house-medellin/hhm-cli"
 [publish]
 include_readme = true
 tag_format = "v{version}"
-exclude = [".env", ".env.*", "node_modules/**", ".vendor/.zed/**", "target/**", "dist/**", "*.log"]
+smoke_test = "test -x \"$ZED_PKG_TEST_TARGET/target/release/hhm-cli\" && \"$ZED_PKG_TEST_TARGET/target/release/hhm-cli\" --help >/dev/null"
+exclude = [".env", ".env.*", ".direnv/**", ".zed/**", ".zed-pack/**", "node_modules/**", ".vendor/.zed/**", "target/**", "tmp/**", "dist/**", "*.log", ".DS_Store"]
 
 [dependencies]
 "hacker-house-medellin/hhm-clients" = "^0.1.0"
@@ -22,4 +23,14 @@ exclude = [".env", ".env.*", "node_modules/**", ".vendor/.zed/**", "target/**", 
 
 [install]
 dir = ".vendor/.zed"
-adapter = "rust"
+adapter = "none"
+
+[build]
+command = "cargo build --release --locked --bin hhm-cli"
+outputs = ["target/release/hhm-cli"]
+
+[bin]
+hhm-cli = "target/release/hhm-cli"
+
+[scripts]
+test = "cargo test --all-targets --locked"

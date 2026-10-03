@@ -2,6 +2,9 @@
 .env.*
 !.env.example
 target/
+.zed/
+.zed-pack/
+.vendor/.zed/
 node_modules/
 dist/
 .astro/
@@ -41,3 +44,7 @@ env/dec/
 *.age-key
 keys.txt
 sops-private*.txt
+
+# Sanctioned scratch locations - AGENTS.md requires both, trailing-slash form
+tmp/
+temp/

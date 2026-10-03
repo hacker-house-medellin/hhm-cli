@@ -140,6 +140,18 @@ mod tests {
     }
 
     #[test]
+    fn cli_overrides_win_without_mutating_process_environment() {
+        let before = std::env::var_os("HHM_OUTPUT");
+        let env = get_env_map(
+            EnvMap::from([("HHM_OUTPUT".into(), "text".into())]),
+            [("HHM_OUTPUT".into(), "json".into())],
+        );
+        assert_eq!(env.get("HHM_OUTPUT").map(String::as_str), Some("json"));
+        assert_eq!(env_or(&env, "HHM_OUTPUT", "text"), "json");
+        assert_eq!(std::env::var_os("HHM_OUTPUT"), before);
+    }
+
+    #[test]
     fn empty_and_whitespace_env_values_are_absent() {
         for raw in ["", " ", "\t"] {
             let env = EnvMap::from([("HHM_OUTPUT".into(), raw.into())]);
