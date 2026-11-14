@@ -47,6 +47,16 @@ fn apply_cli_flags(argv: &[String], initial: EnvMap) -> anyhow::Result<(String, 
     Ok((command, get_env_map(initial, parsed.provided_flags)))
 }
 
+// Encode reservation IDs as exactly one path segment, not a URL suffix.
+fn reservation_url(base: &str, id: &str) -> anyhow::Result<reqwest::Url> {
+    let mut url = reqwest::Url::parse(base)?;
+    url.path_segments_mut()
+        .map_err(|_| anyhow::anyhow!("base URL cannot accept paths"))?
+        .pop_if_empty()
+        .extend(["v1", "reservations", id]);
+    Ok(url)
+}
+
 fn env_or(env: &EnvMap, key: &str, default: &str) -> String {
     env_value(env, key)
         .map(str::to_owned)
@@ -88,7 +98,7 @@ async fn main() -> anyhow::Result<()> {
             let id = env.get("HHM_ID").context("--id is required")?;
             print_response(
                 client
-                    .get(format!("{base}/v1/reservations/{id}"))
+                    .get(reservation_url(base, id)?)
                     .send()
                     .await?,
                 &output,
@@ -130,6 +140,24 @@ async fn watch(base: &str) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reservation_url_escapes_user_supplied_id_as_one_segment() {
+        let url = reservation_url("https://api.example.test", "a/b?admin=true#frag").unwrap();
+        assert_eq!(
+            url.as_str(),
+            "https://api.example.test/v1/reservations/a%2Fb%3Fadmin=true%23frag"
+        );
+        assert_eq!(url.query(), None);
+        assert_eq!(url.fragment(), None);
+    }
+
+    #[test]
+    fn reservation_url_preserves_configured_base_path() {
+        let url = reservation_url("https://api.example.test/prefix/", "r-42").unwrap();
+        assert_eq!(url.as_str(), "https://api.example.test/prefix/v1/reservations/r-42");
+        assert!(reservation_url("not-a-url", "r-42").is_err());
+    }
 
     #[test]
     fn help_and_version_are_available_without_network_or_configuration() {
