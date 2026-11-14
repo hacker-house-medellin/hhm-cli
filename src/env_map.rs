@@ -6,10 +6,10 @@
 
 use std::collections::BTreeMap;
 
-pub type EnvMap = BTreeMap<String, String>;
+pub(crate) type EnvMap = BTreeMap<String, String>;
 
 /// Deterministic merge: later override entries win over the initial map.
-pub fn get_env_map(
+pub(crate) fn get_env_map(
     initial: EnvMap,
     overrides: impl IntoIterator<Item = (String, String)>,
 ) -> EnvMap {
@@ -22,7 +22,7 @@ pub fn get_env_map(
 }
 
 /// Return a trimmed non-empty value from an environment snapshot.
-pub fn env_value<'a>(env: &'a EnvMap, key: &str) -> Option<&'a str> {
+pub(crate) fn env_value<'a>(env: &'a EnvMap, key: &str) -> Option<&'a str> {
     env.get(key)
         .map(String::as_str)
         .map(str::trim)
@@ -31,17 +31,17 @@ pub fn env_value<'a>(env: &'a EnvMap, key: &str) -> Option<&'a str> {
 
 /// Copy the process environment. This is an impure boundary helper.
 #[allow(dead_code)]
-pub fn process_env_map() -> EnvMap {
+pub(crate) fn process_env_map() -> EnvMap {
     std::env::vars().collect()
 }
 
 /// Copy process arguments. This is an impure boundary helper.
-pub fn process_argv() -> Vec<String> {
+pub(crate) fn process_argv() -> Vec<String> {
     std::env::args().collect()
 }
 
 /// Snapshot the current process environment for tests and fallbacks.
-pub fn current_env_map() -> EnvMap {
+pub(crate) fn current_env_map() -> EnvMap {
     process_env_map()
 }
 

@@ -47,6 +47,34 @@ fn apply_cli_flags(argv: &[String], initial: EnvMap) -> anyhow::Result<(String, 
     Ok((command, get_env_map(initial, parsed.provided_flags)))
 }
 
+// Encode reservation IDs as exactly one path segment, not a URL suffix.
+#[derive(Debug)]
+struct InvalidReservationUrl;
+
+impl std::fmt::Display for InvalidReservationUrl {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("invalid base URL for reservation request")
+    }
+}
+
+impl std::error::Error for InvalidReservationUrl {}
+
+fn reservation_url(base: &str, id: &str) -> Result<reqwest::Url, InvalidReservationUrl> {
+    let parsed = reqwest::Url::parse(base).map_err(|_| InvalidReservationUrl)?;
+    append_reservation_path(parsed, id)
+}
+
+fn append_reservation_path(
+    mut url: reqwest::Url,
+    id: &str,
+) -> Result<reqwest::Url, InvalidReservationUrl> {
+    url.path_segments_mut()
+        .map_err(|_| InvalidReservationUrl)?
+        .pop_if_empty()
+        .extend(["v1", "reservations", id]);
+    Ok(url)
+}
+
 fn env_or(env: &EnvMap, key: &str, default: &str) -> String {
     env_value(env, key)
         .map(str::to_owned)
@@ -87,10 +115,7 @@ async fn main() -> anyhow::Result<()> {
         "get" => {
             let id = env.get("HHM_ID").context("--id is required")?;
             print_response(
-                client
-                    .get(format!("{base}/v1/reservations/{id}"))
-                    .send()
-                    .await?,
+                client.get(reservation_url(base, id)?).send().await?,
                 &output,
             )
             .await
@@ -132,6 +157,25 @@ mod tests {
     use super::*;
 
     #[test]
+    fn reservation_url_escapes_user_supplied_id_as_one_segment() {
+        assert!(matches!(
+            reservation_url("https://api.example.test", "a/b?admin=true#frag"),
+            Ok(url) if url.as_str() == "https://api.example.test/v1/reservations/a%2Fb%3Fadmin=true%23frag"
+                && url.query().is_none()
+                && url.fragment().is_none()
+        ));
+    }
+
+    #[test]
+    fn reservation_url_preserves_configured_base_path() {
+        assert!(matches!(
+            reservation_url("https://api.example.test/prefix/", "r-42"),
+            Ok(url) if url.as_str() == "https://api.example.test/prefix/v1/reservations/r-42"
+        ));
+        assert!(reservation_url("not-a-url", "r-42").is_err());
+    }
+
+    #[test]
     fn help_and_version_are_available_without_network_or_configuration() {
         assert_eq!(informational_output(["--help"]), Some(HELP));
         assert_eq!(informational_output(["-h"]), Some(HELP));
@@ -170,9 +214,11 @@ mod tests {
             "--output".into(),
             "json".into(),
         ];
-        let (command, env) = apply_cli_flags(&argv, initial).unwrap();
-        assert_eq!(command, "health");
-        assert_eq!(env.get("HHM_OUTPUT").map(String::as_str), Some("json"));
+        assert!(matches!(
+            apply_cli_flags(&argv, initial),
+            Ok((command, env)) if command == "health"
+                && env.get("HHM_OUTPUT").map(String::as_str) == Some("json")
+        ));
         assert_eq!(std::env::var_os("HHM_OUTPUT"), before);
     }
 
