@@ -205,7 +205,7 @@ mod tests {
     }
 
     #[test]
-    fn apply_cli_flags_merges_cli_over_base_env_without_mutation() {
+    fn apply_cli_flags_merges_cli_over_base_env_without_mutation() -> anyhow::Result<()> {
         let before = std::env::var_os("HHM_OUTPUT");
         let initial = EnvMap::from([("HHM_OUTPUT".into(), "text".into())]);
         let argv = vec![
@@ -214,10 +214,11 @@ mod tests {
             "--output".into(),
             "json".into(),
         ];
-        let (command, env) = apply_cli_flags(&argv, initial).unwrap();
+        let (command, env) = apply_cli_flags(&argv, initial)?;
         assert_eq!(command, "health");
         assert_eq!(env.get("HHM_OUTPUT").map(String::as_str), Some("json"));
         assert_eq!(std::env::var_os("HHM_OUTPUT"), before);
+        Ok(())
     }
 
     #[test]
