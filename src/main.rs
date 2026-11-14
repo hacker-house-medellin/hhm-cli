@@ -48,10 +48,21 @@ fn apply_cli_flags(argv: &[String], initial: EnvMap) -> anyhow::Result<(String, 
 }
 
 // Encode reservation IDs as exactly one path segment, not a URL suffix.
-fn reservation_url(base: &str, id: &str) -> anyhow::Result<reqwest::Url> {
-    let mut url = reqwest::Url::parse(base)?;
+#[derive(Debug)]
+struct InvalidReservationUrl;
+
+impl std::fmt::Display for InvalidReservationUrl {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("invalid base URL for reservation request")
+    }
+}
+
+impl std::error::Error for InvalidReservationUrl {}
+
+fn reservation_url(base: &str, id: &str) -> Result<reqwest::Url, InvalidReservationUrl> {
+    let mut url = reqwest::Url::parse(base).map_err(|_| InvalidReservationUrl)?;
     url.path_segments_mut()
-        .map_err(|_| anyhow::anyhow!("base URL cannot accept paths"))?
+        .map_err(|_| InvalidReservationUrl)?
         .pop_if_empty()
         .extend(["v1", "reservations", id]);
     Ok(url)
