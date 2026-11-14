@@ -64,7 +64,10 @@ fn reservation_url(base: &str, id: &str) -> Result<reqwest::Url, InvalidReservat
     append_reservation_path(parsed, id)
 }
 
-fn append_reservation_path(mut url: reqwest::Url, id: &str) -> Result<reqwest::Url, InvalidReservationUrl> {
+fn append_reservation_path(
+    mut url: reqwest::Url,
+    id: &str,
+) -> Result<reqwest::Url, InvalidReservationUrl> {
     url.path_segments_mut()
         .map_err(|_| InvalidReservationUrl)?
         .pop_if_empty()
@@ -112,10 +115,7 @@ async fn main() -> anyhow::Result<()> {
         "get" => {
             let id = env.get("HHM_ID").context("--id is required")?;
             print_response(
-                client
-                    .get(reservation_url(base, id)?)
-                    .send()
-                    .await?,
+                client.get(reservation_url(base, id)?).send().await?,
                 &output,
             )
             .await
