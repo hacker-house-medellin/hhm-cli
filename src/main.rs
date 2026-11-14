@@ -60,7 +60,11 @@ impl std::fmt::Display for InvalidReservationUrl {
 impl std::error::Error for InvalidReservationUrl {}
 
 fn reservation_url(base: &str, id: &str) -> Result<reqwest::Url, InvalidReservationUrl> {
-    let mut url = reqwest::Url::parse(base).map_err(|_| InvalidReservationUrl)?;
+    let parsed = reqwest::Url::parse(base).map_err(|_| InvalidReservationUrl)?;
+    append_reservation_path(parsed, id)
+}
+
+fn append_reservation_path(mut url: reqwest::Url, id: &str) -> Result<reqwest::Url, InvalidReservationUrl> {
     url.path_segments_mut()
         .map_err(|_| InvalidReservationUrl)?
         .pop_if_empty()
@@ -154,19 +158,20 @@ mod tests {
 
     #[test]
     fn reservation_url_escapes_user_supplied_id_as_one_segment() {
-        let url = reservation_url("https://api.example.test", "a/b?admin=true#frag").unwrap();
-        assert_eq!(
-            url.as_str(),
-            "https://api.example.test/v1/reservations/a%2Fb%3Fadmin=true%23frag"
-        );
-        assert_eq!(url.query(), None);
-        assert_eq!(url.fragment(), None);
+        assert!(matches!(
+            reservation_url("https://api.example.test", "a/b?admin=true#frag"),
+            Ok(url) if url.as_str() == "https://api.example.test/v1/reservations/a%2Fb%3Fadmin=true%23frag"
+                && url.query().is_none()
+                && url.fragment().is_none()
+        ));
     }
 
     #[test]
     fn reservation_url_preserves_configured_base_path() {
-        let url = reservation_url("https://api.example.test/prefix/", "r-42").unwrap();
-        assert_eq!(url.as_str(), "https://api.example.test/prefix/v1/reservations/r-42");
+        assert!(matches!(
+            reservation_url("https://api.example.test/prefix/", "r-42"),
+            Ok(url) if url.as_str() == "https://api.example.test/prefix/v1/reservations/r-42"
+        ));
         assert!(reservation_url("not-a-url", "r-42").is_err());
     }
 
